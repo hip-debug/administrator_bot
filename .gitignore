@@ -4,30 +4,13 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
-env/
-venv/
-.venv/
-.ENV
-.ENV.local
+
+# Environment
 .env
 .env.local
 .env.*
 
-# Logs
-*.log
-
-# Coverage
-.coverage
-htmlcov/
-.coverage.*
-.cache
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
+# Dependencies
+venv/
+.venv/
 ```
