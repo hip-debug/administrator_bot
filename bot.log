@@ -1,0 +1,4 @@
+❌ Error starting bot: Improper token has been passed.
+Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x7f25f8af1f70>, 4990.353639015)])']
+connector: <aiohttp.connector.TCPConnector object at 0x7f25f8afe510>
