@@ -1,178 +1,90 @@
-"""Image generation for user statistics."""
-
 from PIL import Image, ImageDraw, ImageFont
-from io import BytesIO
-import aiohttp
-from typing import Optional
+import io
 
-
-class StatsCardGenerator:
-    """Generates beautiful stats cards for users."""
+def create_stats_card(user_data: dict, rank: int = None) -> bytes:
+    """Создание красивой карточки статистики пользователя"""
     
-    def __init__(self):
-        self.font_large = None
-        self.font_medium = None
-        self.font_small = None
-        self._fonts_loaded = False
+    # Параметры изображения
+    width, height = 800, 400
+    bg_color = (30, 30, 40)
+    card_color = (50, 50, 70)
+    accent_color = (100, 150, 255)
+    text_color = (255, 255, 255)
+    secondary_text = (180, 180, 200)
     
-    async def load_fonts(self) -> None:
-        """Load fonts for the stats card."""
-        # Try to load system fonts, fallback to default
-        font_paths = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/TTF/DejaVuSans.ttf",
-        ]
-        
-        try:
-            self.font_large = ImageFont.truetype(font_paths[0], 48)
-            self.font_medium = ImageFont.truetype(font_paths[1], 32)
-            self.font_small = ImageFont.truetype(font_paths[1], 24)
-            self._fonts_loaded = True
-        except (IOError, OSError):
-            # Fallback to default font
-            self.font_large = ImageFont.load_default()
-            self.font_medium = ImageFont.load_default()
-            self.font_small = ImageFont.load_default()
-            self._fonts_loaded = True
+    # Создаем изображение
+    img = Image.new('RGB', (width, height), bg_color)
+    draw = ImageDraw.Draw(img)
     
-    async def get_user_avatar(self, avatar_url: str) -> Image.Image:
-        """Download user avatar from Discord."""
-        async with aiohttp.ClientSession() as session:
-            async with session.get(avatar_url) as response:
-                if response.status == 200:
-                    image_data = await response.read()
-                    return Image.open(BytesIO(image_data)).convert("RGBA")
-        return None
+    # Рисуем основную карточку
+    draw.rounded_rectangle([(50, 50), (750, 350)], radius=20, fill=card_color)
     
-    def create_progress_bar(self, current: int, maximum: int, width: int = 200, height: int = 20) -> Image.Image:
-        """Create a progress bar image."""
-        progress = max(0, min(1, current / maximum)) if maximum > 0 else 0
-        
-        # Create progress bar background
-        bar = Image.new('RGBA', (width, height), (50, 50, 50, 255))
-        draw = ImageDraw.Draw(bar)
-        
-        # Draw progress fill
-        fill_width = int(width * progress)
-        if fill_width > 0:
-            # Gradient color from blue to purple
-            draw.rectangle([0, 0, fill_width, height], fill=(100, 149, 237, 255))
-        
-        return bar
+    # Рисуем акцентную полосу слева
+    draw.rounded_rectangle([(50, 50), (70, 350)], radius=20, fill=accent_color)
     
-    async def generate_stats_card(
-        self,
-        username: str,
-        level: int,
-        xp: int,
-        xp_to_next: int,
-        messages_count: int,
-        voice_minutes: int,
-        money: int,
-        rank: int,
-        avatar_url: Optional[str] = None
-    ) -> BytesIO:
-        """Generate a beautiful stats card image."""
-        
-        if not self._fonts_loaded:
-            await self.load_fonts()
-        
-        # Card dimensions
-        width, height = 800, 400
-        
-        # Create base image with gradient background
-        card = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(card)
-        
-        # Background gradient (dark theme)
-        for y in range(height):
-            r = int(30 + (y / height) * 20)
-            g = int(30 + (y / height) * 20)
-            b = int(40 + (y / height) * 30)
-            draw.line([(0, y), (width, y)], fill=(r, g, b, 255))
-        
-        # Add rounded rectangle effect (simplified)
-        draw.rectangle([20, 20, width - 20, height - 20], outline=(100, 149, 237, 255), width=3)
-        
-        # Avatar section
-        avatar_size = 150
-        avatar_x, avatar_y = 50, 50
-        
-        if avatar_url:
-            try:
-                avatar = await self.get_user_avatar(avatar_url)
-                if avatar:
-                    avatar = avatar.resize((avatar_size, avatar_size), Image.Resampling.LANCZOS)
-                    
-                    # Create circular mask
-                    mask = Image.new('L', (avatar_size, avatar_size), 0)
-                    mask_draw = ImageDraw.Draw(mask)
-                    mask_draw.ellipse([0, 0, avatar_size, avatar_size], fill=255)
-                    
-                    # Apply circular crop
-                    avatar.putalpha(mask)
-                    card.paste(avatar, (avatar_x, avatar_y), avatar)
-            except Exception:
-                pass
-        
-        # If no avatar or failed to load, draw placeholder
-        if not avatar_url:
-            draw.ellipse([avatar_x, avatar_y, avatar_x + avatar_size, avatar_y + avatar_size], 
-                        fill=(100, 149, 237, 200), outline=(255, 255, 255, 255), width=3)
-            # Draw initial letter
-            initial = username[0].upper() if username else "?"
-            
-        # User info section
-        text_x = avatar_x + avatar_size + 40
-        text_y = 70
-        
-        # Username
-        draw.text((text_x, text_y), username[:20], fill=(255, 255, 255, 255), font=self.font_large)
-        
-        # Level badge
-        level_text = f"Level {level}"
-        draw.text((text_x, text_y + 60), level_text, fill=(100, 149, 237, 255), font=self.font_medium)
-        
-        # XP Progress bar
-        progress_y = text_y + 110
-        draw.text((text_x, progress_y), f"XP: {xp} / {xp_to_next}", fill=(200, 200, 200, 255), font=self.font_small)
-        
-        progress_bar = self.create_progress_bar(xp, xp_to_next, 300, 25)
-        card.paste(progress_bar, (text_x, progress_y + 35), progress_bar)
-        
-        # Stats section (right side)
-        stats_x = width - 280
-        stats_y = 70
-        
-        # Messages count
-        draw.text((stats_x, stats_y), "📝 Messages:", fill=(200, 200, 200, 255), font=self.font_medium)
-        draw.text((stats_x, stats_y + 40), str(messages_count), fill=(255, 255, 255, 255), font=self.font_large)
-        
-        # Voice time
-        voice_hours = voice_minutes // 60
-        voice_mins = voice_minutes % 60
-        draw.text((stats_x, stats_y + 100), "🎤 Voice Time:", fill=(200, 200, 200, 255), font=self.font_medium)
-        draw.text((stats_x, stats_y + 140), f"{voice_hours}h {voice_mins}m", fill=(255, 255, 255, 255), font=self.font_large)
-        
-        # Money
-        draw.text((stats_x, stats_y + 200), "💰 Money:", fill=(255, 215, 0, 255), font=self.font_medium)
-        draw.text((stats_x, stats_y + 240), f"${money:,}", fill=(255, 255, 255, 255), font=self.font_large)
-        
-        # Rank
-        draw.text((stats_x, stats_y + 300), f"🏆 Rank: #{rank}", fill=(255, 215, 0, 255), font=self.font_medium)
-        
-        # Convert to bytes
-        buffer = BytesIO()
-        card.save(buffer, format='PNG')
-        buffer.seek(0)
-        
-        return buffer
-
-
-# Global generator instance
-stats_generator = StatsCardGenerator()
-
-# Alias for compatibility
-generate_stats_card = stats_generator.generate_stats_card
+    # Попытка загрузить шрифт
+    try:
+        title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48)
+        stat_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
+        small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
+    except:
+        title_font = ImageFont.load_default()
+        stat_font = ImageFont.load_default()
+        small_font = ImageFont.load_default()
+    
+    # Имя пользователя
+    username = user_data.get('username', 'Unknown User')
+    draw.text((100, 80), username, font=title_font, fill=text_color)
+    
+    # Уровень
+    level = user_data.get('level', 1)
+    draw.text((100, 140), f"Уровень {level}", font=stat_font, fill=accent_color)
+    
+    # Опыт
+    exp = user_data.get('experience', 0)
+    next_level_exp = int(((level) ** 2) * 100)
+    draw.text((100, 190), f"Опыт: {exp} / {next_level_exp}", font=stat_font, fill=text_color)
+    
+    # Прогресс бар
+    bar_width = 400
+    bar_height = 20
+    bar_x = 100
+    bar_y = 230
+    
+    if next_level_exp > 0:
+        progress = min(exp / next_level_exp, 1.0)
+    else:
+        progress = 0
+    
+    # Фон прогресс бара
+    draw.rounded_rectangle([(bar_x, bar_y), (bar_x + bar_width, bar_y + bar_height)], 
+                          radius=10, fill=(70, 70, 90))
+    
+    # Заполнение прогресс бара
+    fill_width = int(bar_width * progress)
+    if fill_width > 0:
+        draw.rounded_rectangle([(bar_x, bar_y), (bar_x + fill_width, bar_y + bar_height)], 
+                              radius=10, fill=accent_color)
+    
+    # Статистика справа
+    stats_x = 450
+    stats_y = 140
+    
+    messages = user_data.get('messages_count', 0)
+    voice_mins = user_data.get('voice_minutes', 0)
+    money = user_data.get('money', 0.0)
+    
+    draw.text((stats_x, stats_y), f"💬 Сообщения: {messages}", font=stat_font, fill=text_color)
+    draw.text((stats_x, stats_y + 50), f"🎤 Голос: {voice_mins} мин", font=stat_font, fill=text_color)
+    draw.text((stats_x, stats_y + 100), f"💰 Деньги: ${money:.2f}", font=stat_font, fill=text_color)
+    
+    # Ранг
+    if rank:
+        draw.text((stats_x, stats_y + 160), f"🏆 Ранг: #{rank}", font=stat_font, fill=accent_color)
+    
+    # Сохраняем в буфер
+    buffer = io.BytesIO()
+    img.save(buffer, format='PNG')
+    buffer.seek(0)
+    
+    return buffer.getvalue()

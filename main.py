@@ -1,117 +1,87 @@
-"""Main entry point for the Discord bot."""
-
+import discord
+from discord.ext import commands
+from discord import app_commands
 import os
 import asyncio
 from dotenv import load_dotenv
+import sys
 
-import discord
-from discord.ext import commands
+# Добавляем путь для импортов
+sys.path.append('/workspace')
 
-from database import db
+from database.db_manager import Database
 
-
-# Load environment variables
 load_dotenv()
 
-# Configuration
-DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
-
-if not DISCORD_TOKEN:
-    raise ValueError("No Discord token found! Please set DISCORD_TOKEN in your .env file")
-
-
-# Bot setup with all necessary intents
 intents = discord.Intents.default()
-intents.message_content = True  # Required for message-based XP tracking
-intents.members = True  # Required for member events
-intents.voice_states = True  # Required for voice channel tracking
+intents.message_content = True
+intents.members = True
+intents.voice_states = True
 
-bot = commands.Bot(
-    command_prefix="!",  # Prefix for traditional commands (slash commands don't use this)
-    intents=intents,
-    help_command=None  # We'll create a custom help command later if needed
-)
+class ManagerBot(commands.Bot):
+    def __init__(self):
+        super().__init__(
+            command_prefix="!",
+            intents=intents,
+            description="Бот для управления сервером с системой уровней"
+        )
+        self.db = Database()
 
-
-@bot.event
-async def on_ready():
-    """Called when the bot is ready and connected to Discord."""
-    print(f"✅ Logged in as {bot.user.name} (ID: {bot.user.id})")
-    print(f"🔗 Connected to {len(bot.guilds)} guild(s)")
-    
-    # Initialize database connection
-    try:
-        await db.connect()
-        print("✅ Database initialized successfully")
-    except Exception as e:
-        print(f"❌ Database connection failed: {e}")
-        return
-    
-    # Sync slash commands
-    try:
-        synced = await bot.tree.sync()
+    async def setup_hook(self):
+        """Инициализация при запуске"""
+        # Подключение к базе данных
+        db_connected = await self.db.connect()
+        if not db_connected:
+            print("❌ Критическая ошибка: не удалось подключиться к БД")
+            return
+        
+        # Загрузка модулей (cogs)
+        for filename in os.listdir('./cogs'):
+            if filename.endswith('.py') and filename != '__init__.py':
+                try:
+                    await self.load_extension(f'cogs.{filename[:-3]}')
+                    print(f"✅ Loaded cog: cogs.{filename[:-3]}")
+                except Exception as e:
+                    print(f"❌ Failed to load cog cogs.{filename[:-3]}: {e}")
+        
+        # Синхронизация команд
+        self.tree.copy_global_to(guild=self.guilds[0] if self.guilds else None)
+        synced = await self.tree.sync()
         print(f"✅ Synced {len(synced)} slash command(s)")
-    except Exception as e:
-        print(f"⚠️ Failed to sync commands: {e}")
-    
-    print("\n🎉 Bot is ready! Use / commands in your Discord server.")
 
+    async def on_ready(self):
+        """Бот готов к работе"""
+        print(f"\n✅ Logged in as {self.user.name} (ID: {self.user.id})")
+        print(f"🔗 Connected to {len(self.guilds)} guild(s)")
+        print("\n🎉 Bot is ready! Use / commands in your Discord server.\n")
 
-@bot.event
-async def on_guild_join(guild: discord.Guild):
-    """Handle bot joining a new guild."""
-    print(f"🎉 Joined new guild: {guild.name} (ID: {guild.id})")
-    
-    # Ensure database tables exist for new guild
-    try:
-        await db.initialize_tables()
-    except Exception as e:
-        print(f"Error initializing tables for new guild: {e}")
-
-
-@bot.event
-async def on_guild_remove(guild: discord.Guild):
-    """Handle bot leaving a guild."""
-    print(f"👋 Left guild: {guild.name} (ID: {guild.id})")
-
-
-async def load_cogs():
-    """Load all cogs (modules) for the bot."""
-    cog_dir = "cogs"
-    
-    if not os.path.exists(cog_dir):
-        print(f"⚠️ Cogs directory '{cog_dir}' not found!")
-        return
-    
-    for filename in os.listdir(cog_dir):
-        if filename.endswith('.py') and not filename.startswith('_'):
-            cog_name = f"{cog_dir}.{filename[:-3]}"  # Remove .py extension
-            try:
-                await bot.load_extension(cog_name)
-                print(f"✅ Loaded cog: {cog_name}")
-            except Exception as e:
-                print(f"❌ Failed to load cog {cog_name}: {e}")
+    async def on_command_error(self, context, error):
+        """Обработка ошибок команд"""
+        if isinstance(error, commands.CommandNotFound):
+            return
+        elif isinstance(error, commands.MissingPermissions):
+            await context.send("❌ У вас нет прав для использования этой команды", ephemeral=True)
+        else:
+            print(f"❌ Command error: {error}")
+            await context.send(f"❌ Произошла ошибка: {str(error)}", ephemeral=True)
 
 
 async def main():
-    """Main async function to run the bot."""
-    async with bot:
-        # Load all cogs
-        await load_cogs()
-        
-        # Start the bot
-        try:
-            await bot.start(DISCORD_TOKEN)
-        except discord.LoginFailure:
-            print("❌ Invalid bot token! Please check your DISCORD_TOKEN in .env file")
-        except Exception as e:
-            print(f"❌ Error starting bot: {e}")
+    token = os.getenv("DISCORD_TOKEN")
+    
+    if not token:
+        print("❌ DISCORD_TOKEN not found in .env file!")
+        return
+    
+    bot = ManagerBot()
+    
+    try:
+        await bot.start(token)
+    except Exception as e:
+        print(f"❌ Error starting bot: {e}")
+    finally:
+        await bot.db.close()
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\n👋 Shutting down gracefully...")
-        # Cleanup database connection
-        asyncio.run(db.disconnect())
+    asyncio.run(main())
