@@ -7,7 +7,7 @@ import sys
 sys.path.append('/workspace')
 
 from database.db_manager import Database
-from utils.image_gen import create_stats_card
+from utils.image_gen import generate_stats_card
 
 class Levels(commands.Cog):
     """Система уровней и статистики"""
@@ -170,8 +170,19 @@ class Levels(commands.Cog):
             leaderboard = await self.db.get_leaderboard(interaction.guild.id, 100)
             rank = next((i + 1 for i, u in enumerate(leaderboard) if u['user_id'] == target.id), None)
             
+            # Форматируем данные для генерации
+            card_data = {
+                'level': user_data['level'],
+                'xp': user_data['experience'],
+                'max_xp': int((user_data['level'] ** 2) * 100),
+                'messages': user_data['messages_count'],
+                'voice': user_data['voice_minutes'],
+                'money': float(user_data['money']),
+                'rank': rank
+            }
+            
             # Генерируем изображение
-            image_data = await asyncio.to_thread(create_stats_card, user_data, rank)
+            image_data = await generate_stats_card(card_data, target.name, str(target.display_avatar.url))
             
             file = discord.File(fp=image_data, filename="stats_card.png")
             
@@ -184,6 +195,8 @@ class Levels(commands.Cog):
             
         except Exception as e:
             print(f"❌ Ошибка при генерации stats: {e}")
+            import traceback
+            traceback.print_exc()
             await interaction.followup.send(f"❌ Произошла ошибка: {str(e)}", ephemeral=True)
 
     @app_commands.command(name="rank", description="Показать ваш текущий уровень")
