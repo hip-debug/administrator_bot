@@ -11,9 +11,13 @@ class Database:
     def __init__(self):
         self.pool: Optional[asyncpg.Pool] = None
     
-    async def connect(self, database_url: str) -> None:
+    async def connect(self, db_config: dict) -> None:
         """Create a connection pool to the database."""
-        self.pool = await asyncpg.create_pool(database_url)
+        connection_string = (
+            f"postgresql://{db_config['user']}:{db_config['password']}@"
+            f"{db_config['host']}:{db_config['port']}/{db_config['database']}"
+        )
+        self.pool = await asyncpg.create_pool(connection_string)
         print("✅ Database connection established")
     
     async def disconnect(self) -> None:
