@@ -16,27 +16,8 @@ load_dotenv()
 # Configuration
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 
-# Database configuration for SpaceWeb
-DB_HOST = os.getenv('DB_HOST')
-DB_PORT = os.getenv('DB_PORT')
-DB_NAME = os.getenv('DB_NAME')
-DB_USER = os.getenv('DB_USER')
-DB_PASSWORD = os.getenv('DB_PASSWORD')
-
 if not DISCORD_TOKEN:
     raise ValueError("No Discord token found! Please set DISCORD_TOKEN in your .env file")
-
-if not all([DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD]):
-    raise ValueError("Incomplete database configuration! Please set DB_HOST, DB_PORT, DB_NAME, DB_USER, and DB_PASSWORD in your .env file")
-
-# Create database config dictionary
-DB_CONFIG = {
-    'host': DB_HOST,
-    'port': DB_PORT,
-    'database': DB_NAME,
-    'user': DB_USER,
-    'password': DB_PASSWORD
-}
 
 
 # Bot setup with all necessary intents
@@ -60,8 +41,7 @@ async def on_ready():
     
     # Initialize database connection
     try:
-        await db.connect(DB_CONFIG)
-        await db.initialize_tables()
+        await db.connect()
         print("✅ Database initialized successfully")
     except Exception as e:
         print(f"❌ Database connection failed: {e}")

@@ -35,9 +35,10 @@ class LevelSystem(commands.Cog):
     
     async def ensure_user_exists(self, user: discord.Member) -> None:
         """Ensure user exists in the database."""
-        existing = await db.db.get_user(user.id, user.guild.id)
+        existing = await db.db.get_user(user.id, user.guild.id, user.name)
         if not existing:
-            await db.db.create_user(user.id, user.guild.id, user.name)
+            # User will be created automatically by get_user
+            pass
     
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -60,15 +61,29 @@ class LevelSystem(commands.Cog):
         await self.ensure_user_exists(message.author)
         
         # Add XP
-        result = await db.db.update_xp(
+        result = await db.db.add_experience(
             message.author.id,
             message.guild.id,
-            self.xp_per_message
+            self.xp_per_message,
+            message.author.name
         )
         
-        if result and result['leveled_up']:
-            # Handle level up
-            await self.handle_level_up(message.author, result['level'])
+        if result:
+            # Check for level up
+            current_xp = result.get('experience', 0)
+            current_level = result.get('level', 1)
+            
+            # Calculate new level based on XP (formula: level = sqrt(xp / 100))
+            calculated_level = int((current_xp / 100) ** 0.5) + 1
+            
+            if calculated_level > current_level:
+                # Level up!
+                await db.db.update_user(
+                    message.author.id,
+                    message.guild.id,
+                    level=calculated_level
+                )
+                await self.handle_level_up(message.author, calculated_level)
     
     @commands.Cog.listener()
     async def on_voice_state_update(
@@ -95,23 +110,38 @@ class LevelSystem(commands.Cog):
                 minutes = int(duration / 60)
                 
                 if minutes > 0:
-                    await db.db.update_voice_time(
+                    # Add XP for voice time (2 XP per minute)
+                    xp_gained = minutes * self.xp_per_voice_minute
+                    
+                    result = await db.db.add_experience(
                         member.id,
                         member.guild.id,
-                        minutes
+                        xp_gained,
+                        member.name
                     )
                     
-                    # Check for level up
-                    user_data = await db.db.get_user(member.id, member.guild.id)
-                    if user_data:
-                        # Simple check - could be improved with proper level calculation
-                        xp_needed = user_data.get('xp_to_next_level', 100)
-                        current_xp = user_data.get('xp', 0)
+                    # Also update voice minutes
+                    if result:
+                        await db.db.update_user(
+                            member.id,
+                            member.guild.id,
+                            voice_minutes=result.get('voice_minutes', 0) + minutes
+                        )
                         
-                        # This is simplified - you might want to recalculate level properly
-                        if current_xp >= xp_needed:
-                            new_level = user_data.get('level', 1) + 1
-                            await self.handle_level_up(member, new_level)
+                        # Check for level up
+                        current_xp = result.get('experience', 0)
+                        current_level = result.get('level', 1)
+                        
+                        # Calculate new level based on XP
+                        calculated_level = int((current_xp / 100) ** 0.5) + 1
+                        
+                        if calculated_level > current_level:
+                            await db.db.update_user(
+                                member.id,
+                                member.guild.id,
+                                level=calculated_level
+                            )
+                            await self.handle_level_up(member, calculated_level)
                 
                 del self.voice_sessions[user_key]
     
@@ -132,6 +162,20 @@ class LevelSystem(commands.Cog):
         
         # Assign level role if configured
         await self.assign_level_role(member, new_level)
+        
+        # Update database with new level info
+        try:
+            user_data = await db.db.get_user(member.id, member.guild.id)
+            if user_data:
+                current_xp = user_data.get('experience', 0)
+                
+                await db.db.update_user(
+                    member.id,
+                    member.guild.id,
+                    experience=current_xp  # Keep current XP
+                )
+        except Exception as e:
+            print(f"Error updating DB on level up: {e}")
     
     async def assign_level_role(self, member: discord.Member, level: int) -> None:
         """Assign role based on level if configured."""
@@ -170,7 +214,7 @@ class LevelSystem(commands.Cog):
         await self.ensure_user_exists(user)
         
         # Get user data
-        user_data = await db.db.get_user(user.id, guild.id)
+        user_data = await db.db.get_user(user.id, guild.id, user.name)
         
         if not user_data:
             await interaction.followup.send("❌ Could not retrieve your stats.", ephemeral=True)
@@ -180,20 +224,25 @@ class LevelSystem(commands.Cog):
         leaderboard = await db.db.get_leaderboard(guild.id, limit=100)
         rank = next((i + 1 for i, u in enumerate(leaderboard) if u['user_id'] == user.id), len(leaderboard) + 1)
         
+        # Calculate XP needed for next level
+        current_level = user_data.get('level', 1)
+        current_xp = user_data.get('experience', 0)
+        xp_to_next = (current_level + 1) ** 2 * 100  # Formula: (level+1)^2 * 100
+        
         # Generate stats card
-        from utils import stats_generator
+        from utils import image_gen
         
         avatar_url = user.display_avatar.url if user.display_avatar else None
         
         try:
-            card_buffer = await stats_generator.generate_stats_card(
+            card_buffer = await image_gen.generate_stats_card(
                 username=user.display_name,
-                level=user_data['level'],
-                xp=user_data['xp'],
-                xp_to_next=user_data['xp_to_next_level'],
-                messages_count=user_data['messages_count'],
-                voice_minutes=user_data['voice_minutes'],
-                money=user_data['money'],
+                level=current_level,
+                xp=current_xp,
+                xp_to_next=xp_to_next,
+                messages_count=user_data.get('messages_count', 0),
+                voice_minutes=user_data.get('voice_minutes', 0),
+                money=user_data.get('dollar', 0),
                 rank=rank,
                 avatar_url=avatar_url
             )
@@ -217,7 +266,7 @@ class LevelSystem(commands.Cog):
         guild = interaction.guild
         
         await self.ensure_user_exists(user)
-        user_data = await db.db.get_user(user.id, guild.id)
+        user_data = await db.db.get_user(user.id, guild.id, user.name)
         
         if not user_data:
             await interaction.response.send_message("❌ Could not retrieve your rank.", ephemeral=True)
@@ -227,23 +276,28 @@ class LevelSystem(commands.Cog):
         leaderboard = await db.db.get_leaderboard(guild.id, limit=100)
         rank = next((i + 1 for i, u in enumerate(leaderboard) if u['user_id'] == user.id), len(leaderboard) + 1)
         
+        # Calculate XP values
+        current_level = user_data.get('level', 1)
+        current_xp = user_data.get('experience', 0)
+        xp_to_next = (current_level + 1) ** 2 * 100
+        
         embed = discord.Embed(
             title=f"🏆 {user.display_name}'s Rank",
             color=discord.Color.gold()
         )
-        embed.add_field(name="Level", value=str(user_data['level']), inline=True)
-        embed.add_field(name="XP", value=f"{user_data['xp']} / {user_data['xp_to_next_level']}", inline=True)
+        embed.add_field(name="Level", value=str(current_level), inline=True)
+        embed.add_field(name="XP", value=f"{current_xp} / {xp_to_next}", inline=True)
         embed.add_field(name="Rank", value=f"#{rank}", inline=True)
-        embed.add_field(name="Messages", value=str(user_data['messages_count']), inline=True)
+        embed.add_field(name="Messages", value=str(user_data.get('messages_count', 0)), inline=True)
         embed.add_field(
             name="Voice Time", 
-            value=f"{user_data['voice_minutes'] // 60}h {user_data['voice_minutes'] % 60}m", 
+            value=f"{user_data.get('voice_minutes', 0) // 60}h {user_data.get('voice_minutes', 0) % 60}m", 
             inline=True
         )
-        embed.add_field(name="Money", value=f"${user_data['money']:,}", inline=True)
+        embed.add_field(name="Money", value=f"${user_data.get('dollar', 0):,}", inline=True)
         
         # Progress bar visualization
-        progress = user_data['xp'] / user_data['xp_to_next_level'] * 10
+        progress = current_xp / xp_to_next * 10
         bar = "█" * int(progress) + "░" * (10 - int(progress))
         embed.add_field(name="Progress", value=f"[{bar}] {progress:.1f}%", inline=False)
         
@@ -272,15 +326,20 @@ class LevelSystem(commands.Cog):
         for i, user_data in enumerate(leaderboard, 1):
             # Try to get Discord user object
             discord_user = guild.get_member(user_data['user_id'])
-            username = discord_user.display_name if discord_user else user_data['username']
+            username = discord_user.display_name if discord_user else user_data.get('username', 'Unknown')
             
             medals = ["🥇", "🥈", "🥉"]
             medal = medals[i - 1] if i <= 3 else f"{i}."
             
+            level = user_data.get('level', 1)
+            xp = user_data.get('experience', 0)
+            messages = user_data.get('messages_count', 0)
+            voice = user_data.get('voice_minutes', 0)
+            
             embed.add_field(
                 name=f"{medal} {username}",
-                value=f"Level {user_data['level']} • {user_data['xp']} XP\n"
-                      f"📝 {user_data['messages_count']} msgs • 🎤 {user_data['voice_minutes']} min",
+                value=f"Level {level} • {xp} XP\n"
+                      f"📝 {messages} msgs • 🎤 {voice} min",
                 inline=False
             )
         
@@ -304,7 +363,7 @@ class LevelSystem(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def giverole(self, ctx: commands.Context, member: discord.Member, amount: int):
         """Give money to a user (text command for admins)."""
-        await db.db.add_money(member.id, ctx.guild.id, amount)
+        await db.db.update_user(member.id, ctx.guild.id, dollar=amount)
         await ctx.send(f"✅ Gave ${amount:,} to {member.mention}")
     
     @giverole.error
