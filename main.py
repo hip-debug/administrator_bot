@@ -45,9 +45,13 @@ class ManagerBot(commands.Bot):
                     print(f"❌ Failed to load cog cogs.{filename[:-3]}: {e}")
         
         # Синхронизация команд
-        self.tree.copy_global_to(guild=self.guilds[0] if self.guilds else None)
-        synced = await self.tree.sync()
-        print(f"✅ Synced {len(synced)} slash command(s)")
+        if self.guilds:
+            self.tree.copy_global_to(guild=self.guilds[0])
+            synced = await self.tree.sync(guild=self.guilds[0])
+            print(f"✅ Synced {len(synced)} slash command(s) for guild: {self.guilds[0].name}")
+        else:
+            synced = await self.tree.sync()
+            print(f"✅ Synced {len(synced)} global slash command(s)")
 
     async def on_ready(self):
         """Бот готов к работе"""
