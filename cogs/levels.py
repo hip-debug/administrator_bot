@@ -157,6 +157,10 @@ class Levels(commands.Cog):
         """Показать красивую карточку статистики"""
         await interaction.response.defer()
         
+        if not interaction.guild:
+            await interaction.followup.send("❌ Эта команда работает только на сервере!", ephemeral=True)
+            return
+        
         target = member or interaction.user
         
         try:
@@ -181,9 +185,10 @@ class Levels(commands.Cog):
             }
             
             # Генерируем изображение
-            image_data = create_stats_card(card_data, rank)
+            image_bytes = create_stats_card(card_data, rank)
             
-            file = discord.File(fp=image_data, filename="stats_card.png")
+            from io import BytesIO
+            file = discord.File(fp=BytesIO(image_bytes), filename="stats_card.png")
             
             embed = discord.Embed(
                 title=f"📊 Статистика: {target.name}",
