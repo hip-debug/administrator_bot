@@ -7,7 +7,7 @@ import sys
 sys.path.append('/workspace')
 
 from database.db_manager import Database
-from utils.image_gen import generate_stats_card
+from utils.image_gen import create_stats_card
 
 class Levels(commands.Cog):
     """Система уровней и статистики"""
@@ -172,17 +172,16 @@ class Levels(commands.Cog):
             
             # Форматируем данные для генерации
             card_data = {
+                'username': target.name,
                 'level': user_data['level'],
-                'xp': user_data['experience'],
-                'max_xp': int((user_data['level'] ** 2) * 100),
-                'messages': user_data['messages_count'],
-                'voice': user_data['voice_minutes'],
-                'money': float(user_data['money']),
-                'rank': rank
+                'experience': user_data['experience'],
+                'messages_count': user_data['messages_count'],
+                'voice_minutes': user_data['voice_minutes'],
+                'money': float(user_data['money'])
             }
             
             # Генерируем изображение
-            image_data = await generate_stats_card(card_data, target.name, str(target.display_avatar.url))
+            image_data = create_stats_card(card_data, rank)
             
             file = discord.File(fp=image_data, filename="stats_card.png")
             
