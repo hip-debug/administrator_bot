@@ -1,1 +1,16 @@
-Nothing should be ignored since the modified files are all source code files (.py) without any build artifacts, dependencies, or temporary files in the changes.
+```
+# Compiled Python files
+*.pyc
+__pycache__/
+
+# Logs
+*.log
+bot.log
+
+# Environment variables
+.env
+
+# Dependencies
+.venv/
+venv/
+```
