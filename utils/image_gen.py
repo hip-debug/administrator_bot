@@ -173,3 +173,6 @@ class StatsCardGenerator:
 
 # Global generator instance
 stats_generator = StatsCardGenerator()
+
+# Alias for compatibility
+generate_stats_card = stats_generator.generate_stats_card
